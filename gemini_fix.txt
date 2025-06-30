@@ -1,0 +1,178 @@
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  > check the code. Problem: When paste text only the last character of the pasted text arrived.  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+✦ The paste functionality is flawed because it only captures the last character of pasted text. This is due to improper handling of stdin data streams, where multi-character pastes are
+  processed as a series of individual keypresses instead of a single event.
+
+  To fix this, I will:
+
+
+   1. Enable bracketed paste mode in the terminal, which wraps pasted text in special escape sequences.
+   2. Update the useKeypress hook to correctly handle these sequences, ensuring the entire pasted block is processed as a single string.
+   3. Implement a timeout-based fallback for terminals that don't support bracketed paste, which will buffer rapid keypress events and interpret them as a paste.
+
+
+  This will create a more robust input handling system that correctly processes pasted text. I'll start by reading useKeypress.ts to get its latest content before applying the changes.
+ ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ✔  ReadFile ...ckages\cli\src\ui\hooks\useKeypress.ts                                                                                                                             │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+✦ I've identified the issue in useKeypress.ts and will apply a fix that enables bracketed paste mode and introduces a timeout-based fallback for terminals that don't support it. This ensures
+  that pasted text is correctly processed as a single input, resolving the bug where only the last character was being registered. I will now replace the content of the file with the
+  corrected code.
+ ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ✔  Edit ...ckages\cli\src\ui\hooks\useKeypress.ts: /**... => /**...                                                                                                               │
+ │                                                                                                                                                                                   │
+ │    17       sequence: string;                                                                                                                                                     │
+ │    18     }                                                                                                                                                                       │
+ │    19                                                                                                                                                                             │
+ │    20   + const PASTE_TIMEOUT = 10;                                                                                                                                               │
+ │    21   +                                                                                                                                                                         │
+ │    22     /**                                                                                                                                                                     │
+ │    23      * A hook that listens for keypress events from stdin, providing a                                                                                                      │
+ │    24      * key object that mirrors the one from Node's `readline` module,                                                                                                       │
+ │    ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    49         }                                                                                                                                                                   │
+ │    50                                                                                                                                                                             │
+ │    51         setRawMode(true);                                                                                                                                                   │
+ │    52   +     // Enable bracketed paste mode. This will cause the terminal to send                                                                                                │
+ │    53   +     // special escape codes before and after pasted text.                                                                                                               │
+ │    54   +     // See: https://cirw.in/blog/bracketed-paste                                                                                                                        │
+ │    55   +     process.stdout.write('\x1b[?2004h');                                                                                                                                │
+ │    56                                                                                                                                                                             │
+ │    57         const rl = readline.createInterface({ input: stdin });                                                                                                              │
+ │    58   +     readline.emitKeypressEvents(stdin, rl);                                                                                                                             │
+ │    59   +                                                                                                                                                                         │
+ │    60         let isPaste = false;                                                                                                                                                │
+ │    53   -     let pasteBuffer = Buffer.alloc(0);                                                                                                                                  │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    61   +     let pasteBuffer = '';                                                                                                                                               │
+ │    62                                                                                                                                                                             │
+ │    55   -     const handleKeypress = (_: unknown, key: Key) => {                                                                                                                  │
+ │    56   -       if (key.name === 'paste-start') {                                                                                                                                 │
+ │    57   -         isPaste = true;                                                                                                                                                 │
+ │    58   -       } else if (key.name === 'paste-end') {                                                                                                                            │
+ │    59   -         isPaste = false;                                                                                                                                                │
+ │    63   +     let keyBuffer: Key[] = [];                                                                                                                                          │
+ │    64   +     let bufferTimeout: NodeJS.Timeout | null = null;                                                                                                                    │
+ │    65   +                                                                                                                                                                         │
+ │    66   +     const flushKeyBuffer = () => {                                                                                                                                      │
+ │    67   +       if (bufferTimeout) {                                                                                                                                              │
+ │    68   +         clearTimeout(bufferTimeout);                                                                                                                                    │
+ │    69   +       }                                                                                                                                                                 │
+ │    70   +                                                                                                                                                                         │
+ │    71   +       if (!keyBuffer.length) {                                                                                                                                          │
+ │    72   +         return;                                                                                                                                                         │
+ │    73   +       }                                                                                                                                                                 │
+ │    74   +                                                                                                                                                                         │
+ │    75   +       if (keyBuffer.length > 1) {                                                                                                                                       │
+ │    76   +         const sequence = keyBuffer.map((k) => k.sequence).join('');                                                                                                     │
+ │    77             onKeypressRef.current({                                                                                                                                         │
+ │    78               name: '',                                                                                                                                                     │
+ │    79               ctrl: false,                                                                                                                                                  │
+ │    80               meta: false,                                                                                                                                                  │
+ │    81               shift: false,                                                                                                                                                 │
+ │    82               paste: true,                                                                                                                                                  │
+ │    66   -           sequence: pasteBuffer.toString(),                                                                                                                             │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    83   +           sequence,                                                                                                                                                     │
+ │    84             });                                                                                                                                                             │
+ │    68   -         pasteBuffer = Buffer.alloc(0);                                                                                                                                  │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    85           } else {                                                                                                                                                          │
+ │    70   -         if (isPaste) {                                                                                                                                                  │
+ │    71   -           pasteBuffer = Buffer.concat([pasteBuffer, Buffer.from(key.sequence)]);                                                                                        │
+ │    72   -         } else {                                                                                                                                                        │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    86             // Handle special keys                                                                                                                                          │
+ │    87   +         const key = keyBuffer[0];                                                                                                                                       │
+ │    88             if (key.name === 'return' && key.sequence === '\x1B\r') {                                                                                                       │
+ │    89               key.meta = true;                                                                                                                                              │
+ │    90             }                                                                                                                                                               │
+ │    77   -           onKeypressRef.current({ ...key, paste: isPaste });                                                                                                            │
+ │    ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    91   +         onKeypressRef.current(key);                                                                                                                                     │
+ │    92           }                                                                                                                                                                 │
+ │    93   +       keyBuffer = [];                                                                                                                                                   │
+ │    94   +     };                                                                                                                                                                  │
+ │    95   +                                                                                                                                                                         │
+ │    96   +     const handleKeypress = (_: unknown, key: Key) => {                                                                                                                  │
+ │    97   +       // When bracketed paste mode is enabled, the terminal will send                                                                                                   │
+ │    98   +       // paste-start and paste-end events.                                                                                                                              │
+ │    99   +       if (key.name === 'paste-start') {                                                                                                                                 │
+ │    100  +         flushKeyBuffer();                                                                                                                                               │
+ │    101  +         isPaste = true;                                                                                                                                                 │
+ │    102  +         return;                                                                                                                                                         │
+ │    103          }                                                                                                                                                                 │
+ │    104  +                                                                                                                                                                         │
+ │    105  +       if (key.name === 'paste-end') {                                                                                                                                   │
+ │    106  +         isPaste = false;                                                                                                                                                │
+ │    107  +         onKeypressRef.current({                                                                                                                                         │
+ │    108  +           name: '',                                                                                                                                                     │
+ │    109  +           ctrl: false,                                                                                                                                                  │
+ │    110  +           meta: false,                                                                                                                                                  │
+ │    111  +           shift: false,                                                                                                                                                 │
+ │    112  +           paste: true,                                                                                                                                                  │
+ │    113  +           sequence: pasteBuffer,                                                                                                                                        │
+ │    114  +         });                                                                                                                                                             │
+ │    115  +         pasteBuffer = '';                                                                                                                                               │
+ │    116  +         return;                                                                                                                                                         │
+ │    117  +       }                                                                                                                                                                 │
+ │    118  +                                                                                                                                                                         │
+ │    119  +       if (isPaste) {                                                                                                                                                    │
+ │    120  +         pasteBuffer += key.sequence;                                                                                                                                    │
+ │    121  +         return;                                                                                                                                                         │
+ │    122  +       }                                                                                                                                                                 │
+ │    123  +                                                                                                                                                                         │
+ │    124  +       // Fallback for terminals that don't support bracketed paste.                                                                                                     │
+ │    125  +       // We buffer keypresses for a short time and if more than one                                                                                                     │
+ │    126  +       // arrives, we assume it's a paste.                                                                                                                               │
+ │    127  +       if (bufferTimeout) {                                                                                                                                              │
+ │    128  +         clearTimeout(bufferTimeout);                                                                                                                                    │
+ │    129  +       }                                                                                                                                                                 │
+ │    130  +                                                                                                                                                                         │
+ │    131  +       keyBuffer.push({ ...key, paste: false });                                                                                                                         │
+ │    132  +                                                                                                                                                                         │
+ │    133  +       bufferTimeout = setTimeout(() => {                                                                                                                                │
+ │    134  +         flushKeyBuffer();                                                                                                                                               │
+ │    135  +         bufferTimeout = null;                                                                                                                                           │
+ │    136  +       }, PASTE_TIMEOUT);                                                                                                                                                │
+ │    137        };                                                                                                                                                                  │
+ │    138                                                                                                                                                                            │
+ │    82   -     readline.emitKeypressEvents(stdin, rl);                                                                                                                             │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    139        stdin.on('keypress', handleKeypress);                                                                                                                               │
+ │    140                                                                                                                                                                            │
+ │    141        return () => {                                                                                                                                                      │
+ │    142          stdin.removeListener('keypress', handleKeypress);                                                                                                                 │
+ │    143          rl.close();                                                                                                                                                       │
+ │    144  +                                                                                                                                                                         │
+ │    145  +       // Disable bracketed paste mode.                                                                                                                                  │
+ │    146  +       process.stdout.write('\x1b[?2004l');                                                                                                                              │
+ │    147          setRawMode(false);                                                                                                                                                │
+ │    148                                                                                                                                                                            │
+ │    90   -       // If we are in the middle of a paste, send what we have.                                                                                                         │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    149  +       // Flush any pending buffers.                                                                                                                                     │
+ │    150  +       if (bufferTimeout) {                                                                                                                                              │
+ │    151  +         clearTimeout(bufferTimeout);                                                                                                                                    │
+ │    152  +       }                                                                                                                                                                 │
+ │    153  +       flushKeyBuffer();                                                                                                                                                 │
+ │    154  +                                                                                                                                                                         │
+ │    155          if (isPaste) {                                                                                                                                                    │
+ │    156            onKeypressRef.current({                                                                                                                                         │
+ │    157              name: '',                                                                                                                                                     │
+ │    159              meta: false,                                                                                                                                                  │
+ │    160              shift: false,                                                                                                                                                 │
+ │    161              paste: true,                                                                                                                                                  │
+ │    98   -           sequence: pasteBuffer.toString(),                                                                                                                             │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    162  +           sequence: pasteBuffer,                                                                                                                                        │
+ │    163            });                                                                                                                                                             │
+ │    100  -         pasteBuffer = Buffer.alloc(0);                                                                                                                                  │
+ │    ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════  │
+ │    164          }                                                                                                                                                                 │
+ │    165        };                                                                                                                                                                  │
+ │    166      }, [isActive, stdin, setRawMode]);                                                                                                                                    │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

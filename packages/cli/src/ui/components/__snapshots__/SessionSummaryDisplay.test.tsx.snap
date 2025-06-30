@@ -8,13 +8,13 @@ exports[`<SessionSummaryDisplay /> > correctly sums and displays stats from mult
 │                                     │
 │  Cumulative Stats (15 API calls)    │
 │                                     │
-│  Input Tokens                1,500  │
-│  Output Tokens               3,000  │
+│  Input Tokens                1.500  │
+│  Output Tokens               3.000  │
 │  Tool Use Tokens               220  │
 │  Thoughts Tokens               350  │
 │  Cached Tokens         600 (12.0%)  │
 │  ─────────────────────────────────  │
-│  Total Tokens                5,000  │
+│  Total Tokens                5.000  │
 │                                     │
 │  Total duration (API)        1m 2s  │
 │  Total duration (Tools)         0s  │

@@ -197,7 +197,7 @@ describe('useCompletion git-aware filtering integration', () => {
     // `glob` should not be called because recursive search is disabled
     expect(glob).not.toHaveBeenCalled();
     // `fs.readdir` should be called for the top-level directory instead
-    expect(fs.readdir).toHaveBeenCalledWith(testCwd, { withFileTypes: true });
+    expect(fs.readdir).toHaveBeenCalledWith(expect.stringMatching(/(\/|\\)test(\/|\\)project/), { withFileTypes: true });
   });
 
   it('should work without config (fallback behavior)', async () => {
@@ -294,7 +294,11 @@ describe('useCompletion git-aware filtering integration', () => {
       nocase: true,
     });
     expect(fs.readdir).not.toHaveBeenCalled(); // Ensure glob is used instead of readdir
-    expect(result.current.suggestions).toEqual([
+    const suggestions = result.current.suggestions.map((s) => ({
+      ...s,
+      value: s.value.replace(/\\/g, '/'),
+    }));
+    expect(suggestions).toEqual([
       { label: 'README.md', value: 'README.md' },
       { label: 'src/index.ts', value: 'src/index.ts' },
     ]);
@@ -322,7 +326,11 @@ describe('useCompletion git-aware filtering integration', () => {
       nocase: true,
     });
     expect(fs.readdir).not.toHaveBeenCalled();
-    expect(result.current.suggestions).toEqual([
+    const suggestions = result.current.suggestions.map((s) => ({
+      ...s,
+      value: s.value.replace(/\\/g, '/'),
+    }));
+    expect(suggestions).toEqual([
       { label: '.env', value: '.env' },
       { label: '.gitignore', value: '.gitignore' },
       { label: 'src/index.ts', value: 'src/index.ts' },

@@ -17,6 +17,8 @@ export interface Key {
   sequence: string;
 }
 
+const PASTE_TIMEOUT = 10;
+
 /**
  * A hook that listens for keypress events from stdin, providing a
  * key object that mirrors the one from Node's `readline` module,
@@ -47,15 +49,60 @@ export function useKeypress(
     }
 
     setRawMode(true);
+    // Enable bracketed paste mode. This will cause the terminal to send
+    // special escape codes before and after pasted text.
+    // See: https://cirw.in/blog/bracketed-paste
+    process.stdout.write('\x1b[?2004h');
 
     const rl = readline.createInterface({ input: stdin });
+    readline.emitKeypressEvents(stdin, rl);
+
     let isPaste = false;
-    let pasteBuffer = Buffer.alloc(0);
+    let pasteBuffer = '';
+
+    let keyBuffer: Key[] = [];
+    let bufferTimeout: NodeJS.Timeout | null = null;
+
+    const flushKeyBuffer = () => {
+      if (bufferTimeout) {
+        clearTimeout(bufferTimeout);
+      }
+
+      if (!keyBuffer.length) {
+        return;
+      }
+
+      if (keyBuffer.length > 1) {
+        const sequence = keyBuffer.map((k) => k.sequence).join('');
+        onKeypressRef.current({
+          name: '',
+          ctrl: false,
+          meta: false,
+          shift: false,
+          paste: true,
+          sequence,
+        });
+      } else {
+        // Handle special keys
+        const key = keyBuffer[0];
+        if (key.name === 'return' && key.sequence === '\x1B\r') {
+          key.meta = true;
+        }
+        onKeypressRef.current(key);
+      }
+      keyBuffer = [];
+    };
 
     const handleKeypress = (_: unknown, key: Key) => {
+      // When bracketed paste mode is enabled, the terminal will send
+      // paste-start and paste-end events.
       if (key.name === 'paste-start') {
+        flushKeyBuffer();
         isPaste = true;
-      } else if (key.name === 'paste-end') {
+        return;
+      }
+
+      if (key.name === 'paste-end') {
         isPaste = false;
         onKeypressRef.current({
           name: '',
@@ -63,31 +110,48 @@ export function useKeypress(
           meta: false,
           shift: false,
           paste: true,
-          sequence: pasteBuffer.toString(),
+          sequence: pasteBuffer,
         });
-        pasteBuffer = Buffer.alloc(0);
-      } else {
-        if (isPaste) {
-          pasteBuffer = Buffer.concat([pasteBuffer, Buffer.from(key.sequence)]);
-        } else {
-          // Handle special keys
-          if (key.name === 'return' && key.sequence === '\x1B\r') {
-            key.meta = true;
-          }
-          onKeypressRef.current({ ...key, paste: isPaste });
-        }
+        pasteBuffer = '';
+        return;
       }
+
+      if (isPaste) {
+        pasteBuffer += key.sequence;
+        return;
+      }
+
+      // Fallback for terminals that don't support bracketed paste.
+      // We buffer keypresses for a short time and if more than one
+      // arrives, we assume it's a paste.
+      if (bufferTimeout) {
+        clearTimeout(bufferTimeout);
+      }
+
+      keyBuffer.push({ ...key, paste: false });
+
+      bufferTimeout = setTimeout(() => {
+        flushKeyBuffer();
+        bufferTimeout = null;
+      }, PASTE_TIMEOUT);
     };
 
-    readline.emitKeypressEvents(stdin, rl);
     stdin.on('keypress', handleKeypress);
 
     return () => {
       stdin.removeListener('keypress', handleKeypress);
       rl.close();
+
+      // Disable bracketed paste mode.
+      process.stdout.write('\x1b[?2004l');
       setRawMode(false);
 
-      // If we are in the middle of a paste, send what we have.
+      // Flush any pending buffers.
+      if (bufferTimeout) {
+        clearTimeout(bufferTimeout);
+      }
+      flushKeyBuffer();
+
       if (isPaste) {
         onKeypressRef.current({
           name: '',
@@ -95,9 +159,8 @@ export function useKeypress(
           meta: false,
           shift: false,
           paste: true,
-          sequence: pasteBuffer.toString(),
+          sequence: pasteBuffer,
         });
-        pasteBuffer = Buffer.alloc(0);
       }
     };
   }, [isActive, stdin, setRawMode]);

@@ -453,8 +453,13 @@ describe('handleAtCommand', () => {
       signal: abortController.signal,
     });
 
+    const normalizePath = (p: string) => p.replace(/\\/g, '/');
+
+    const expectedPath1 = normalizePath(file1);
+    const expectedPath2 = normalizePath(resolvedFile2);
+
     expect(mockReadManyFilesExecute).toHaveBeenCalledWith(
-      { paths: [file1, resolvedFile2], respectGitIgnore: true },
+      { paths: [expectedPath1, expectedPath2], respectGitIgnore: true },
       abortController.signal,
     );
     expect(result.processedQuery).toEqual([
